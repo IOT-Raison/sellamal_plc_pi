@@ -99,12 +99,17 @@ PLCConfig powerPLC =
 // Power House EB - Slave ID 1
 new MFMConfig(
         powerPLC, 1, 18, "Power House EB",
+        // Addresses verified with /api/plc/raw on 12-Nov-2026 (base 40000, CDAB floats)
         40712, 40714, 40716,  // Voltage L1, L2, L3
-        40720, 40722, 40724,  // Current L1, L2, L3
-        40764, 40766, 40768,  // PF L1, L2, L3
-        40750, 40752, 40754,  // kW L1, L2, L3
-        41300, 0, 0,          // kWh; kVAh and kVARh not provided
-        0, 0, 0, 0, 0, 0     // Huller-specific fields unused
+        40718, 40720, 40722,  // Current L1, L2, L3
+        40762, 40764, 40766,  // PF L1, L2, L3
+        40750, 40752, 40754,  // kW L1, L2, L3 (in W, see meter.18.kw-scale)
+        41300, 0, 0,          // kWh (not yet verified); kVAh, kVARh not provided
+        40770,                // Total kW (in W)
+        40726,                // Frequency
+        0, 0,                 // Avg VLN (calculated), Avg VLL (not available)
+        40724,                // Avg current
+        40768                 // Avg PF
 ),
 
 // Power House Solar - Slave ID 2

@@ -8,6 +8,7 @@ import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import com.example.sellammal.Config.MFMConfig;
@@ -45,9 +46,11 @@ public class MFMReadingServiceImpl implements MFMReadingService {
     private boolean useSlaveIdAsUnitId;
 
     private final PlcConnectionManager plcConnections;
+    private final Environment env;
 
-    public MFMReadingServiceImpl(PlcConnectionManager plcConnections) {
+    public MFMReadingServiceImpl(PlcConnectionManager plcConnections, Environment env) {
         this.plcConnections = plcConnections;
+        this.env = env;
     }
 
     @Override
@@ -70,13 +73,17 @@ public class MFMReadingServiceImpl implements MFMReadingService {
             Double pf1 = r.read(config.getPfL1());
             Double pf2 = r.read(config.getPfL2());
             Double pf3 = r.read(config.getPfL3());
-            Double kw1 = r.read(config.getKwL1());
-            Double kw2 = r.read(config.getKwL2());
-            Double kw3 = r.read(config.getKwL3());
-            Double kwh = r.read(config.getTotalKwh());
+            // Per-meter scaling, e.g. meter.18.kw-scale=0.001 when the PLC holds W instead of kW
+            double kwScale = env.getProperty("meter." + config.getDeviceId() + ".kw-scale", Double.class, 1.0);
+            double kwhScale = env.getProperty("meter." + config.getDeviceId() + ".kwh-scale", Double.class, 1.0);
+
+            Double kw1 = scale(r.read(config.getKwL1()), kwScale);
+            Double kw2 = scale(r.read(config.getKwL2()), kwScale);
+            Double kw3 = scale(r.read(config.getKwL3()), kwScale);
+            Double kwh = scale(r.read(config.getTotalKwh()), kwhScale);
 
             // Huller-style registers (direct totals / averages)
-            Double totalKw = r.read(config.getTotalKw());
+            Double totalKw = scale(r.read(config.getTotalKw()), kwScale);
             Double freq = r.read(config.getFrequency());
             Double avgVln = r.read(config.getAverageVln());
             Double avgVll = r.read(config.getAverageVll());
@@ -170,6 +177,10 @@ public class MFMReadingServiceImpl implements MFMReadingService {
             case "UINT32": return raw & 0xFFFFFFFFL;
             default:       return Float.intBitsToFloat(raw);
         }
+    }
+
+    private static Double scale(Double v, double factor) {
+        return v == null ? null : v * factor;
     }
 
     private static Double sum(Double... vals) {
