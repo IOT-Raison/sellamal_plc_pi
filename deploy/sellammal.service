@@ -1,0 +1,22 @@
+# Raspberry Pi 5 systemd service for the Sellammal IoT gateway
+# Pi user: raison   App folder: /home/raison/apps/myapp   Jar: app.jar
+# Install:
+#   sudo cp sellammal.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now sellammal
+# Logs:
+#   journalctl -u sellammal -f
+[Unit]
+Description=Sellammal MFM Modbus gateway (3 PLCs -> cloud)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=raison
+WorkingDirectory=/home/raison/apps/myapp
+# Buffer file is written to /home/raison/apps/myapp/data/mfm-buffer.jsonl
+ExecStart=/usr/bin/java -Xms64m -Xmx256m -jar /home/raison/apps/myapp/app.jar
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
