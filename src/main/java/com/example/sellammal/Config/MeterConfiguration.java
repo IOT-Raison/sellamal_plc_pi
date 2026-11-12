@@ -130,8 +130,10 @@ new MFMConfig(
                         0, 0, 0,
                         0, 0, 0,
                         0, 0, 0,
-                        41340, 0, 0,
-                        41344, 41348, 41352, 41356, 41360, 41364
+                        41340, 0, 0,          // kWh (verified)
+                        // kW, Freq, Avg VLN, Avg VLL, Avg I, Avg PF
+                        // Excel had VLL=41356 / I=41360 swapped; verified on site 12-Nov-2026
+                        41344, 41348, 41352, 41360, 41356, 41364
                 )
         );
     }
