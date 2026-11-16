@@ -123,6 +123,30 @@ new MFMConfig(
         0, 0, 0, 0, 0, 0     // Huller-specific fields unused
 ),
 
+// Light - Slave ID 5 (Power PLC)
+// TODO confirm cloud deviceId 21 with the receiver application
+new MFMConfig(
+        powerPLC, 5, 21, "Light",
+        40212, 40216, 40220,  // Voltage L1, L2, L3
+        40224, 40228, 40232,  // Current L1, L2, L3
+        40236, 40238, 40240,  // PF L1, L2, L3
+        40248, 40252, 40256,  // kW L1, L2, L3
+        41780, 41784, 41788,  // kWh, kVAh, kVARh
+        0, 0, 0, 0, 0, 0     // Huller-specific fields unused
+),
+
+// Generator - Slave ID 6 (Power PLC)
+// TODO confirm cloud deviceId 22 with the receiver application
+new MFMConfig(
+        powerPLC, 6, 22, "Generator",
+        40312, 40316, 40320,  // Voltage L1, L2, L3
+        40324, 40328, 40332,  // Current L1, L2, L3
+        40336, 40338, 40340,  // PF L1, L2, L3
+        40348, 40352, 40356,  // kW L1, L2, L3
+        41880, 41884, 41888,  // kWh, kVAh, kVARh
+        0, 0, 0, 0, 0, 0     // Huller-specific fields unused
+),
+
 
                 new MFMConfig(
                         hullerPLC, 1, 20,  "Huller",

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 @Service
@@ -76,8 +77,21 @@ public class CloudUploadService {
                     response.getStatusCode());
             return false;
 
+        } catch (HttpClientErrorException ex) {
+            // 4xx = the cloud will never accept this record (e.g. unknown deviceId).
+            // Drop it so it does not block every record queued behind it.
+            log.error("Cloud rejected record permanently (HTTP {}), dropping it: {}",
+                    ex.getStatusCode(), ex.getResponseBodyAsString());
+            try {
+                bufferFileService.removeFirst();
+            } catch (Exception e) {
+                log.error("Could not remove rejected record: {}", e.getMessage());
+                return false;
+            }
+            return true;
+
         } catch (Exception ex) {
-            // Keep the record in the buffer for retry.
+            // Network / 5xx: keep the record in the buffer for retry.
             log.error("Upload failed; buffered record retained: {}",
                     ex.getMessage());
             return false;
