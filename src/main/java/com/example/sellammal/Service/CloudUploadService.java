@@ -8,6 +8,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -27,7 +28,11 @@ public class CloudUploadService {
 
     public CloudUploadService(BufferFileService bufferFileService) {
         this.bufferFileService = bufferFileService;
-        this.restTemplate = new RestTemplate();
+        // Timeouts so a stalled cloud/network can never hang the uploader forever.
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10_000);
+        factory.setReadTimeout(30_000);
+        this.restTemplate = new RestTemplate(factory);
     }
 
     /** Max records sent per run, so a big backlog drains in chunks. */

@@ -46,7 +46,11 @@ public class MFMCollectionScheduler {
         plcExecutor.shutdownNow();
     }
 
-    @Scheduled(fixedRate = 60000)
+    /**
+     * At second 0 of every minute. A cron schedule never "catches up" missed
+     * runs, so a stall can no longer cause a burst of back-to-back readings.
+     */
+    @Scheduled(cron = "0 * * * * *")
     public void collectEveryMinute() {
 
         Map<String, List<MFMConfig>> plcGroups =
