@@ -25,19 +25,73 @@ public class PackingBuffer {
         Files.createDirectories(path.getParent());
         Files.writeString(path, mapper.writeValueAsString(r) + System.lineSeparator(),
                 StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+                StandardOpenOption.WRITE, StandardOpenOption.APPEND,
+                StandardOpenOption.DSYNC);
     }
 
-    public synchronized PackingRecord peek() throws IOException {
+    /**
+     * Oldest valid record, or null if none.
+     * Corrupt lines (e.g. NUL bytes after a power cut) are moved to
+     * <file>.bad and removed, so one bad line can never block the queue.
+     */
+    public synchronized PackingRecord peek()
+            throws IOException {
+
         if (!Files.exists(path)) {
             return null;
         }
-        for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
-            if (!line.isBlank()) {
-                return mapper.readValue(line, PackingRecord.class);
+
+        List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+        List<String> bad = new java.util.ArrayList<>();
+        PackingRecord found = null;
+        int i = 0;
+        for (; i < lines.size(); i++) {
+            String line = lines.get(i).replace("\u0000", "").trim();
+            if (line.isEmpty()) {
+                if (!lines.get(i).isEmpty()) bad.add(lines.get(i)); // only NULs / junk
+                continue;
+            }
+            try {
+                found = mapper.readValue(line, PackingRecord.class);
+                break;
+            } catch (Exception ex) {
+                bad.add(lines.get(i));
             }
         }
-        return null;
+
+        if (!bad.isEmpty() || (found != null && lines.get(i).indexOf('\u0000') >= 0)) {
+            quarantine(bad);
+            // Rewrite the file starting at the first valid record (cleaned of NULs)
+            List<String> rest = new java.util.ArrayList<>();
+            for (int k = i; k < lines.size(); k++) {
+                String l = lines.get(k).replace("\u0000", "");
+                if (!l.isBlank()) rest.add(l.trim());
+            }
+            rewrite(rest);
+        }
+        return found;
+    }
+
+    private void quarantine(List<String> bad) throws IOException {
+        if (bad.isEmpty()) return;
+        Path badFile = path.resolveSibling(path.getFileName() + ".bad");
+        StringBuilder sb = new StringBuilder();
+        for (String b : bad) sb.append(b.replace("\u0000", "\\0")).append(System.lineSeparator());
+        Files.writeString(badFile, sb.toString(), StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.WRITE, StandardOpenOption.APPEND);
+        org.slf4j.LoggerFactory.getLogger(getClass()).warn(
+                "Moved {} corrupt line(s) from {} to {}", bad.size(), path.getFileName(), badFile.getFileName());
+    }
+
+    private void rewrite(List<String> lines) throws IOException {
+        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
+        Files.write(tmp, lines, StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.DSYNC);
+        try {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     public synchronized void removeFirst() throws IOException {
@@ -59,7 +113,8 @@ public class PackingBuffer {
         lines.remove(first);
         Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
         Files.write(tmp, lines, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.DSYNC);
         try {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ex) {
