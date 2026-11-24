@@ -86,7 +86,8 @@ public class PackingBuffer {
     private void rewrite(List<String> lines) throws IOException {
         Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
         Files.write(tmp, lines, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.DSYNC);
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        syncFile(tmp);
         try {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ex) {
@@ -113,12 +114,19 @@ public class PackingBuffer {
         lines.remove(first);
         Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
         Files.write(tmp, lines, StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
-                StandardOpenOption.DSYNC);
+                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        syncFile(tmp);
         try {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (AtomicMoveNotSupportedException ex) {
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    /** Flush a written file to the SD card once (cheaper than syncing every write). */
+    private static void syncFile(Path p) throws IOException {
+        try (java.nio.channels.FileChannel ch = java.nio.channels.FileChannel.open(p, StandardOpenOption.WRITE)) {
+            ch.force(true);
         }
     }
 }

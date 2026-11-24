@@ -1,6 +1,8 @@
 package com.example.sellammal.Service;
 
 import com.example.sellammal.DTO.CloudPayload;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,70 +38,79 @@ public class CloudUploadService {
     }
 
     /** Max records sent per run, so a big backlog drains in chunks. */
-    private static final int MAX_PER_RUN = 500;
+    /** Records sent per file rewrite, and batches per run (5 s). */
+    private static final int BATCH = 50;
+    private static final int MAX_BATCHES_PER_RUN = 40;
 
     /**
      * Every 5 s: send buffered records oldest-first until the buffer is empty
      * or an upload fails (then stop and retry next run, keeping order).
+     * Sent records are removed from the buffer file once per batch.
      */
     @Scheduled(fixedDelay = 5000)
     public synchronized void uploadBufferedRecords() {
-        for (int i = 0; i < MAX_PER_RUN; i++) {
-            if (!uploadNextRecord()) {
+        for (int b = 0; b < MAX_BATCHES_PER_RUN; b++) {
+            List<CloudPayload> batch;
+            try {
+                batch = bufferFileService.peekBatch(BATCH);
+            } catch (Exception ex) {
+                log.error("Could not read upload buffer: {}", ex.getMessage());
+                return;
+            }
+            if (batch.isEmpty()) {
+                return;
+            }
+
+            int done = 0;
+            boolean failed = false;
+            for (CloudPayload payload : batch) {
+                Boolean ok = send(payload);
+                if (ok == null) {        // network / 5xx: stop, retry later
+                    failed = true;
+                    break;
+                }
+                done++;                  // uploaded (true) or permanently rejected (false)
+            }
+
+            try {
+                bufferFileService.removeFirst(done);
+            } catch (Exception ex) {
+                log.error("Could not remove {} sent record(s) from buffer: {}", done, ex.getMessage());
+                return;
+            }
+            if (b == 0 && done == BATCH) {
+                try {
+                    log.info("Upload backlog: {} record(s) still buffered", bufferFileService.size());
+                } catch (Exception ignored) {
+                }
+            }
+            if (failed || done < batch.size()) {
                 return;
             }
         }
     }
 
-    /** @return true if a record was uploaded, false if buffer empty or upload failed. */
-    private boolean uploadNextRecord() {
+    /** @return true uploaded, false permanently rejected (drop it), null = retry later. */
+    private Boolean send(CloudPayload payload) {
         try {
-            CloudPayload payload = bufferFileService.peek();
-
-            if (payload == null) {
-                return false;
-            }
-
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-
-            HttpEntity<CloudPayload> request =
-                    new HttpEntity<>(payload, headers);
-
             ResponseEntity<String> response =
-                    restTemplate.postForEntity(
-                            cloudUrl, request, String.class);
-
+                    restTemplate.postForEntity(cloudUrl, new HttpEntity<>(payload, headers), String.class);
             if (response.getStatusCode().is2xxSuccessful()) {
-                bufferFileService.removeFirst();
-
-                log.info("Uploaded deviceId={}",
-                        payload.getDeviceId());
+                log.info("Uploaded deviceId={}", payload.getDeviceId());
                 return true;
             }
-
-            log.error("Upload rejected with HTTP {}; record retained",
-                    response.getStatusCode());
-            return false;
-
+            log.error("Upload rejected with HTTP {}; record retained", response.getStatusCode());
+            return null;
         } catch (HttpClientErrorException ex) {
-            // 4xx = the cloud will never accept this record (e.g. unknown deviceId).
-            // Drop it so it does not block every record queued behind it.
+            // 4xx = the cloud will never accept this record (e.g. unknown deviceId): drop it
             log.error("Cloud rejected record permanently (HTTP {}), dropping it: {}",
                     ex.getStatusCode(), ex.getResponseBodyAsString());
-            try {
-                bufferFileService.removeFirst();
-            } catch (Exception e) {
-                log.error("Could not remove rejected record: {}", e.getMessage());
-                return false;
-            }
-            return true;
-
-        } catch (Exception ex) {
-            // Network / 5xx: keep the record in the buffer for retry.
-            log.error("Upload failed; buffered record retained: {}",
-                    ex.getMessage());
             return false;
+        } catch (Exception ex) {
+            log.error("Upload failed; buffered record retained: {}", ex.getMessage());
+            return null;
         }
     }
 }
